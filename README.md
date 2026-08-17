@@ -93,7 +93,7 @@ as non-manipulative, then synthetic layering/spoofing patterns are injected
 with tracked ground-truth order IDs and timestamps, at graded difficulty
 tiers. A secondary qualitative check compares detector behavior against
 publicly documented cases (e.g., the Coscia spoofing prosecution) as a sanity
-check, not a quantitative test. Full rationale in [docs/PHASES.md](docs/PHASES.md).
+check, not a quantitative test.
 
 ## License
 
