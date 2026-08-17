@@ -2,7 +2,6 @@
 
 Low-latency C++ order-flow surveillance engine with inline ML-based spoofing/layering detection.
 
-**Status: scaffold only.** See [docs/PHASES.md](docs/PHASES.md) for the build plan — nothing past Phase 0 is implemented yet.
 
 ## Problem
 
