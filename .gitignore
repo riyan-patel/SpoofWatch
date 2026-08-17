@@ -1,0 +1,46 @@
+# Build
+build/
+cmake-build-*/
+*.o
+*.obj
+*.so
+*.dylib
+*.a
+*.exe
+
+# C++
+compile_commands.json
+.cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Data (large / not committed)
+data/lobster_samples/*
+!data/lobster_samples/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+
+# Models
+*.onnx
+*.txt.model
+python/training/*.model
+
+# Benchmarks output
+benchmarks/results/*
+!benchmarks/results/.gitkeep
+*.perf.data*
+flamegraph.svg
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
