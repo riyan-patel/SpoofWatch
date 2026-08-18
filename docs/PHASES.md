@@ -4,9 +4,11 @@ Checkpoint-gated, not calendar-gated — don't move to the next phase until the
 current one's exit criteria pass. See README.md §Architecture for the full
 design rationale.
 
-- [ ] **Phase 0 — Environment & Data**
+- [x] **Phase 0 — Environment & Data**
   CMake + GoogleTest build, Python env, LOBSTER sample downloaded and parsed.
   Exit: can read a raw LOBSTER file and print structured events for a sample day.
+  Done: `data/lobster_samples/AAPL_2012-06-21_10/` (400,391 events), parsed via
+  `cpp/src/lobster_reader.cpp` / `spoofwatch <message.csv>`.
 
 - [ ] **Phase 1 — Order Book + Lifecycle Tracking**
   Fixed-size price-level book, order-ID → lifecycle hash map, pre-allocated pool.

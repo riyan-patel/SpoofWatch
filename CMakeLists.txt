@@ -14,7 +14,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
 option(SPOOFWATCH_BUILD_TESTS "Build GoogleTest suite" ON)
 
 add_library(spoofwatch_core
-  cpp/src/placeholder.cpp
+  cpp/src/lobster_reader.cpp
 )
 target_include_directories(spoofwatch_core PUBLIC cpp/include)
 
@@ -32,7 +32,7 @@ if(SPOOFWATCH_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
 
   enable_testing()
-  add_executable(spoofwatch_tests cpp/tests/placeholder_test.cpp)
+  add_executable(spoofwatch_tests cpp/tests/lobster_reader_test.cpp)
   target_link_libraries(spoofwatch_tests PRIVATE spoofwatch_core GTest::gtest_main)
   include(GoogleTest)
   gtest_discover_tests(spoofwatch_tests)
