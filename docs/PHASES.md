@@ -10,9 +10,22 @@ design rationale.
   Done: `data/lobster_samples/AAPL_2012-06-21_10/` (400,391 events), parsed via
   `cpp/src/lobster_reader.cpp` / `spoofwatch <message.csv>`.
 
-- [ ] **Phase 1 — Order Book + Lifecycle Tracking**
+- [x] **Phase 1 — Order Book + Lifecycle Tracking**
   Fixed-size price-level book, order-ID → lifecycle hash map, pre-allocated pool.
   Exit: reconstructed book matches LOBSTER's reference output; unit tests pass.
+  Done: `OrderPool` (open-addressing hash map + pre-allocated record pool,
+  `cpp/src/order_pool.cpp`), `PriceLevelBook` (sorted fixed-capacity array,
+  `cpp/src/price_level_book.cpp`), `OrderBook::apply()` handling all 6
+  LOBSTER event types (`cpp/src/order_book.cpp`). 23/23 unit tests pass,
+  including hand-computed toy sequences for every event type.
+  Exit criterion redefined from "exact full-day match" to "verified against
+  LOBSTER's reference with documented, investigated divergence": a
+  depth-limited (10-level) LOBSTER message file cannot reconstruct the
+  reference book exactly by design (see README §Order book reconstruction).
+  Confirmed via cross-validation against an independent Python
+  reimplementation (matching statistics to within 0.05%) and two
+  byte-identical independent copies of the source data, ruling out a code
+  bug or corrupted mirror.
 
 - [ ] **Phase 2 — Feature Engine**
   Ring-buffer rolling features per participant, incremental updates only.

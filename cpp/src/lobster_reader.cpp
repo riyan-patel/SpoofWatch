@@ -46,7 +46,9 @@ double parse_time(std::string_view field, const std::string& line) {
     }
 }
 
-LobsterMessage parse_line(const std::string& line) {
+} // namespace
+
+LobsterMessage parse_lobster_message_line(const std::string& line) {
     LobsterMessage msg{};
     size_t pos = 0;
 
@@ -60,7 +62,14 @@ LobsterMessage parse_line(const std::string& line) {
     return msg;
 }
 
-} // namespace
+std::vector<int64_t> parse_int64_csv_line(const std::string& line) {
+    std::vector<int64_t> values;
+    size_t pos = 0;
+    while (pos < line.size()) {
+        values.push_back(parse_number<int64_t>(next_field(line, pos), line));
+    }
+    return values;
+}
 
 size_t read_lobster_messages(
     const std::string& message_csv_path,
@@ -76,7 +85,7 @@ size_t read_lobster_messages(
         if (line.empty()) {
             continue;
         }
-        on_message(parse_line(line));
+        on_message(parse_lobster_message_line(line));
         ++count;
     }
 

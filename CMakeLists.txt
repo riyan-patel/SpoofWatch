@@ -15,11 +15,17 @@ option(SPOOFWATCH_BUILD_TESTS "Build GoogleTest suite" ON)
 
 add_library(spoofwatch_core
   cpp/src/lobster_reader.cpp
+  cpp/src/order_pool.cpp
+  cpp/src/price_level_book.cpp
+  cpp/src/order_book.cpp
 )
 target_include_directories(spoofwatch_core PUBLIC cpp/include)
 
 add_executable(spoofwatch cpp/src/main.cpp)
 target_link_libraries(spoofwatch PRIVATE spoofwatch_core)
+
+add_executable(spoofwatch_validate_book cpp/src/validate_book.cpp)
+target_link_libraries(spoofwatch_validate_book PRIVATE spoofwatch_core)
 
 if(SPOOFWATCH_BUILD_TESTS)
   include(FetchContent)
@@ -32,7 +38,12 @@ if(SPOOFWATCH_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
 
   enable_testing()
-  add_executable(spoofwatch_tests cpp/tests/lobster_reader_test.cpp)
+  add_executable(spoofwatch_tests
+    cpp/tests/lobster_reader_test.cpp
+    cpp/tests/order_pool_test.cpp
+    cpp/tests/price_level_book_test.cpp
+    cpp/tests/order_book_test.cpp
+  )
   target_link_libraries(spoofwatch_tests PRIVATE spoofwatch_core GTest::gtest_main)
   include(GoogleTest)
   gtest_discover_tests(spoofwatch_tests)

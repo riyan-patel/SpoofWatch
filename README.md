@@ -83,7 +83,37 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ./build/spoofwatch
 ctest --test-dir build
+
+# Replay a LOBSTER message file through OrderBook and diff against LOBSTER's
+# own reference orderbook output (see "Order book reconstruction" below for
+# why this doesn't reach 100%):
+./build/spoofwatch_validate_book \
+  data/lobster_samples/AAPL_2012-06-21_10/message_10.csv \
+  data/lobster_samples/AAPL_2012-06-21_10/orderbook_10.csv \
+  10
 ```
+
+## Order book reconstruction
+
+`OrderBook` (order pool + per-side price-level books, see `cpp/include/spoofwatch/`)
+replays a LOBSTER message stream and maintains live bid/ask depth with zero
+heap allocation past construction. `spoofwatch_validate_book` diffs the
+result against LOBSTER's own reference `orderbook_*.csv` row by row.
+
+That diff won't reach 100% on a depth-limited file, and that's expected, not
+a bug: LOBSTER's message file only records events for orders that affect the
+requested top-N price levels *at the time of the event*. An order can start
+inside the top 10, get buried deeper as later orders arrive, and then be
+cancelled or executed with no message ever appearing in a 10-level file —
+by then it's no longer a top-10-affecting event. Separately, the very first
+row already reflects the opening auction's effect on the book, but the
+auction event itself (`type 6`) is stripped from LOBSTER's public "clean"
+samples, so the message file can't explain that starting depth either.
+Verified this isn't a mirror/corruption issue: two independent copies of
+the AAPL 2012-06-21 sample are byte-identical, and an independent
+from-scratch Python replay reproduces the same match statistics as the C++
+engine. Core per-event-type logic (new/cancel/delete/execute) is verified
+directly with hand-computed toy sequences in `cpp/tests/order_book_test.cpp`.
 
 ## Ground truth
 
