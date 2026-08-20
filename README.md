@@ -115,6 +115,27 @@ from-scratch Python replay reproduces the same match statistics as the C++
 engine. Core per-event-type logic (new/cancel/delete/execute) is verified
 directly with hand-computed toy sequences in `cpp/tests/order_book_test.cpp`.
 
+## Feature engine
+
+`FeatureEngine` (`cpp/include/spoofwatch/feature_engine.hpp`) tracks
+per-participant rolling features incrementally — never recomputed from
+history — using `RingBuffer` (fixed-capacity circular buffer) and
+`IncrementalStats` (Welford's online mean/variance):
+
+- order-to-trade ratio, cancel rate
+- order lifetime mean/stddev (add → cancel/execute)
+- layering score: longest run of same-side orders placed within a time
+  window at non-decreasing distance from the touch
+- cancel-burst z-score: how anomalously fast the latest cancel followed
+  the previous one, relative to this participant's own history
+- size-vs-baseline: latest order size vs. trailing mean, computed before
+  the new size is folded into that mean
+
+It's deliberately decoupled from `OrderBook`/LOBSTER replay: LOBSTER data
+is anonymized (no real participant IDs), so callers supply `participant_id`
+explicitly per event. Real per-participant tracking becomes meaningful once
+synthetic ground-truth injection assigns participant IDs (see below).
+
 ## Ground truth
 
 Public data has no labeled spoofing incidents. This project uses synthetic

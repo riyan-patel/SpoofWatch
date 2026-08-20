@@ -18,6 +18,7 @@ add_library(spoofwatch_core
   cpp/src/order_pool.cpp
   cpp/src/price_level_book.cpp
   cpp/src/order_book.cpp
+  cpp/src/feature_engine.cpp
 )
 target_include_directories(spoofwatch_core PUBLIC cpp/include)
 
@@ -43,6 +44,9 @@ if(SPOOFWATCH_BUILD_TESTS)
     cpp/tests/order_pool_test.cpp
     cpp/tests/price_level_book_test.cpp
     cpp/tests/order_book_test.cpp
+    cpp/tests/ring_buffer_test.cpp
+    cpp/tests/incremental_stats_test.cpp
+    cpp/tests/feature_engine_test.cpp
   )
   target_link_libraries(spoofwatch_tests PRIVATE spoofwatch_core GTest::gtest_main)
   include(GoogleTest)

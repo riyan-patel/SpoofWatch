@@ -27,9 +27,20 @@ design rationale.
   byte-identical independent copies of the source data, ruling out a code
   bug or corrupted mirror.
 
-- [ ] **Phase 2 — Feature Engine**
+- [x] **Phase 2 — Feature Engine**
   Ring-buffer rolling features per participant, incremental updates only.
   Exit: every feature unit-tested against hand-computed values on toy sequences.
+  Done: `FeatureEngine` (`cpp/src/feature_engine.cpp`) tracks order-to-trade
+  ratio, cancel rate, order-lifetime mean/stddev (Welford's online
+  algorithm, `IncrementalStats`), layering score (longest run of same-side
+  orders placed within a time window at non-decreasing distance from
+  touch, via `RingBuffer`), cancel-burst z-score, and size-vs-baseline —
+  all O(1) per event, zero heap allocation past construction. 16 new tests
+  (39 total), including hand-computed toy sequences for every feature.
+  Decoupled from OrderBook/LOBSTER replay on purpose: LOBSTER data is
+  anonymized (no real participant IDs), so callers supply participant_id
+  explicitly — real per-participant tracking becomes meaningful once
+  Phase 3 injects synthetic participant IDs. Not yet wired into main.cpp.
 
 - [ ] **Phase 3 — Synthetic Ground Truth Generation**
   Layering/spoofing injection pipeline, difficulty tiers, ground truth tracked separately.
