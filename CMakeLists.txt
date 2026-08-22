@@ -28,6 +28,9 @@ target_link_libraries(spoofwatch PRIVATE spoofwatch_core)
 add_executable(spoofwatch_validate_book cpp/src/validate_book.cpp)
 target_link_libraries(spoofwatch_validate_book PRIVATE spoofwatch_core)
 
+add_executable(spoofwatch_features cpp/src/feature_dump.cpp)
+target_link_libraries(spoofwatch_features PRIVATE spoofwatch_core)
+
 if(SPOOFWATCH_BUILD_TESTS)
   include(FetchContent)
   FetchContent_Declare(

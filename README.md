@@ -91,6 +91,13 @@ ctest --test-dir build
   data/lobster_samples/AAPL_2012-06-21_10/message_10.csv \
   data/lobster_samples/AAPL_2012-06-21_10/orderbook_10.csv \
   10
+
+# Replay an injected message stream through OrderBook + FeatureEngine and
+# dump one feature-vector row per order lifecycle event (see "Model
+# training" below):
+./build/spoofwatch_features \
+  data/synthetic/AAPL_2012-06-21/message_augmented.csv \
+  data/synthetic/AAPL_2012-06-21/features.csv
 ```
 
 ## Order book reconstruction
@@ -166,6 +173,42 @@ python -m python.injection.injector \
   data/synthetic/AAPL_2012-06-21 \
   --patterns-per-tier 15 --seed 0
 ```
+
+## Model training
+
+`spoofwatch_features` (`cpp/src/feature_dump.cpp`) replays an injected,
+participant-labeled message file through the real `OrderBook` +
+`FeatureEngine` — the same engine that will eventually sit in the hot
+inference path — and writes one feature-vector row per order lifecycle
+event:
+
+```bash
+./build/spoofwatch_features \
+  data/synthetic/AAPL_2012-06-21/message_augmented.csv \
+  data/synthetic/AAPL_2012-06-21/features.csv
+```
+
+`python/training/train.py` joins that against `ground_truth.csv`, keeping
+only each order's feature snapshot at submission time (before its outcome
+is known, so the label can't leak in), trains a `LightGBM` classifier on a
+time-based split, and compares it against `python/eval/metrics.py`'s naive
+cancel-rate-threshold baseline (which scores 0 recall — synthetic
+manipulators are single-use identities with no prior cancel history to
+threshold on):
+
+```bash
+python -m python.training.train \
+  data/synthetic/AAPL_2012-06-21/features.csv \
+  data/synthetic/AAPL_2012-06-21/ground_truth.csv
+```
+
+Precision/recall/F1 are reported at LightGBM's default 0.5 threshold,
+which is a poor operating point given how imbalanced a single trading
+day's injected-pattern rate is; PR-AUC is printed alongside as a more
+honest ranking-quality number, and recall is broken out by difficulty
+tier and pattern type rather than averaged away — it's uneven and
+sample-size-sensitive run to run, which is expected with a few hundred
+positives total, not hidden.
 
 ## License
 

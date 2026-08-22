@@ -66,9 +66,36 @@ design rationale.
   AAPL 2012-06-21 sample (400,391 background events, 45 injected patterns,
   15 per tier).
 
-- [ ] **Phase 4 — Model Training**
+- [x] **Phase 4 — Model Training**
   LightGBM classifier, time-based split, precision/recall/F1/FPR.
   Exit: model beats naive cancel-rate-threshold baseline on held-out data.
+  Done: `spoofwatch_features` (`cpp/src/feature_dump.cpp`) replays an
+  injection-pipeline output file through the real `OrderBook` +
+  `FeatureEngine` — not a Python reimplementation — and writes one
+  feature-vector row per order lifecycle event, so training data and the
+  eventual hot-path detector share one implementation. `python/training/
+  dataset.py` joins those features against `ground_truth.csv`, keeping
+  only each order's feature snapshot at submission time (its `NEW` event)
+  so the label can't leak into the features — a real-time system only
+  ever sees an order at the moment it arrives. `python/training/train.py`
+  trains a `LGBMClassifier` on a time-based split (train on the earlier
+  part of the day, test on the later part) and compares it against
+  `python/eval/metrics.py`'s naive cancel-rate-threshold baseline, which
+  scores 0 recall — synthetic manipulator participants are single-use
+  identities with no prior history, so their historical cancel_rate at
+  submission time is uninformative by construction. The model clears that
+  bar comfortably (e.g. F1 0.46, PR-AUC ~130x the base positive rate on a
+  120-pattern run), driven mostly by `order_to_trade_ratio`,
+  `mean_lifetime_ns`, and `cancel_rate` rather than the layering-specific
+  features. Recall is uneven and sample-size-sensitive across difficulty
+  tier and pattern type run to run (single trading day, a few hundred
+  positives total) — reported via `recall_by_group`, not smoothed over.
+  Precision/recall/F1 are computed at LightGBM's default 0.5 threshold,
+  which is a poor operating point under this much class imbalance;
+  PR-AUC is printed alongside as the more honest ranking-quality number,
+  and picking a real deployment threshold is left to Phase 7. 14 pytest
+  tests cover the label join (including multi-order layering patterns)
+  and metric functions against hand-computed values.
 
 - [ ] **Phase 5 — Hot-Path Inference Integration**
   Branchless C++ tree evaluator or ONNX Runtime, zero-allocation event loop.
