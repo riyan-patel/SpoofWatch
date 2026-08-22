@@ -146,6 +146,27 @@ tiers. A secondary qualitative check compares detector behavior against
 publicly documented cases (e.g., the Coscia spoofing prosecution) as a sanity
 check, not a quantitative test.
 
+`python/injection/` implements this: `participants.py` assigns every
+background order a synthetic, Zipf-distributed participant_id (LOBSTER's
+own order_id carries no participant identity); `patterns.py` generates
+spoofing (one oversized order resting just behind the touch, pulled before
+it can fill) and layering (a same-side order stack at non-decreasing
+distance from touch — the exact shape `FeatureEngine`'s layering_score
+looks for — cancelled in a burst) at three difficulty tiers (easy/medium/
+hard, varying size multiplier, dwell time, and stack depth); `injector.py`
+replays a LOBSTER message file in lockstep with LOBSTER's own orderbook
+reference file so injected orders sit at real, non-crossing top-of-book
+prices, then writes a participant-labeled augmented message stream and a
+`ground_truth.csv` kept separate from the event stream itself:
+
+```bash
+python -m python.injection.injector \
+  data/lobster_samples/AAPL_2012-06-21_10/message_10.csv \
+  data/lobster_samples/AAPL_2012-06-21_10/orderbook_10.csv \
+  data/synthetic/AAPL_2012-06-21 \
+  --patterns-per-tier 15 --seed 0
+```
+
 ## License
 
 MIT

@@ -42,9 +42,29 @@ design rationale.
   explicitly — real per-participant tracking becomes meaningful once
   Phase 3 injects synthetic participant IDs. Not yet wired into main.cpp.
 
-- [ ] **Phase 3 — Synthetic Ground Truth Generation**
+- [x] **Phase 3 — Synthetic Ground Truth Generation**
   Layering/spoofing injection pipeline, difficulty tiers, ground truth tracked separately.
   Exit: labeled dataset generated with ground-truth IDs/timestamps, difficulty-tiered.
+  Done: `python/injection/` — `participants.py` assigns every background
+  LOBSTER order_id a synthetic, Zipf-distributed participant_id (real
+  LOBSTER data is anonymized, so this is a prerequisite for per-participant
+  features); `patterns.py` generates single-order spoofing patterns
+  (large order resting one tick behind the touch, pulled before it can
+  fill) and multi-order layering patterns (stack of same-side orders at
+  non-decreasing distance from touch, matching `FeatureEngine`'s
+  layering_score definition exactly, cancelled in a burst); `injector.py`
+  reads a LOBSTER message file in lockstep with LOBSTER's own orderbook
+  reference file (real top-of-book prices, so injected orders never cross
+  the spread), injects patterns at spread-out points across three
+  difficulty tiers (easy/medium/hard, tuned via size multiplier, dwell
+  time, and order count), and writes an augmented, participant-labeled
+  message stream plus a separate `ground_truth.csv` (pattern_id, type,
+  tier, participant_id, order_ids, start/end time) — never mixed into the
+  event stream itself. 5 pytest tests cover participant assignment
+  determinism, pattern invariants (no injected execution rows, correct
+  non-decreasing distance), and an end-to-end run. Verified on the full
+  AAPL 2012-06-21 sample (400,391 background events, 45 injected patterns,
+  15 per tier).
 
 - [ ] **Phase 4 — Model Training**
   LightGBM classifier, time-based split, precision/recall/F1/FPR.
