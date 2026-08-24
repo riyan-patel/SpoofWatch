@@ -256,9 +256,31 @@ file-chained tools above:
   data/synthetic/AAPL_2012-06-21/scored.csv
 ```
 
-This is Phase 6 groundwork — per-stage latency histograms and a
-sustained-throughput benchmark against it are still to come (see
-`docs/PHASES.md`).
+## Benchmarking
+
+`spoofwatch_benchmark` (`cpp/src/benchmark.cpp`) replays the same hot
+path as `spoofwatch_pipeline` above, timing each stage with
+`clock_gettime(CLOCK_MONOTONIC)` into a pre-allocated `LatencyHistogram`,
+and counts heap allocations via a global `operator new`/`delete`
+override linked only into this binary. The first 5000 events are
+replayed but excluded from every measurement, so things like
+`std::getline`'s line buffer finish growing before the measured window
+starts:
+
+```bash
+./build/spoofwatch_benchmark \
+  data/synthetic/AAPL_2012-06-21/message_augmented.csv \
+  data/synthetic/AAPL_2012-06-21/export/model.bin
+```
+
+On a real 120-pattern run (401,079 events), repeated 3 times: **0 heap
+allocations after warmup, every run** — 308K-318K events/sec steady-state
+throughput, with the 200-tree `TreeModel::predict_proba` call dominating
+end-to-end latency (p50=4.1μs, p99=8.2μs, p99.9=16.4μs) against
+parse/book/feature stages each under ~100ns mean. `perf`/flamegraph
+profiling wasn't run — this is a macOS machine, not Linux — so that part
+of Phase 6 is a known gap, not a silently skipped one; see
+`docs/PHASES.md`.
 
 ## License
 

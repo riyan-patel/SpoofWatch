@@ -148,17 +148,40 @@ design rationale.
   mismatches and non-binary objectives) — 43 C++ / 17 Python tests total,
   all passing.
 
-- [ ] **Phase 6 — Benchmarking & Profiling**
+- [x] **Phase 6 — Benchmarking & Profiling**
   Per-stage p50/p99/p99.9 latency, perf/flamegraphs, sustained throughput test.
   Exit: zero heap allocations observed in steady-state hot path.
-  In progress: `spoofwatch_pipeline` (`cpp/src/pipeline.cpp`) assembles
-  the full hot path into one process for the first time — parse ->
-  `OrderBook` -> `FeatureEngine` -> `TreeModel`, scoring every `NEW`
-  order — where previously each stage was a separate CLI tool chained
-  through files. Still needed: per-stage latency instrumentation
-  (`clock_gettime(CLOCK_MONOTONIC)` histograms), a sustained-throughput
-  replay reporting p50/p99/p99.9, and confirming zero heap allocations in
-  steady state (via `perf`/an allocation-trapping build, not assumption).
+  Done: `spoofwatch_benchmark` (`cpp/src/benchmark.cpp`) replays an
+  injected file through the same parse -> `OrderBook` -> `FeatureEngine`
+  -> `TreeModel` loop as `spoofwatch_pipeline`, timing each stage with
+  `clock_gettime(CLOCK_MONOTONIC)` into a pre-allocated, log2-bucketed
+  `LatencyHistogram` (`cpp/include/spoofwatch/latency_histogram.hpp`;
+  bucket-boundary resolution, i.e. within ~2x — adequate for p50/p99/
+  p99.9, not exact sample reproduction). The first `warmup_events`
+  (default 5000) are replayed but excluded from every measurement, so
+  things like `std::getline`'s reused line buffer finish growing to its
+  steady-state capacity before the window starts. Zero-allocation is
+  checked, not assumed: `alloc_counter.cpp` overrides the global
+  `operator new`/`delete` to count calls, linked only into
+  `spoofwatch_benchmark` (not `spoofwatch_core`) so no other binary or
+  test is affected. On a real 120-pattern run (401,079 events, 3
+  repeated trials): **0 heap allocations after warmup, every time**
+  (turned out `std::stod`'s temporary string for time parsing stays
+  within small-string-optimization bounds for these inputs — no custom
+  parser needed) — 318K/311K/312K events/sec steady-state throughput,
+  inference (200-tree `TreeModel::predict_proba`) dominating end-to-end
+  latency at p50=4096ns/p99=8192ns/p99.9=16384ns, versus parse/book/
+  feature stages each under ~100ns mean (often below this instrument's
+  own clock-call overhead). `p99.9` was identical across all 3 runs;
+  `max` varied wildly (137,000 to 1,391,000ns) while `p99.9` didn't
+  budge — the signature of rare OS scheduling jitter, not an algorithmic
+  issue. 7 new C++ unit tests for `LatencyHistogram` (hand-computed mean/
+  min/max, monotonic percentiles, zero/overflow edge cases) — 50 C++ / 17
+  Python tests total, all passing.
+  Not done: `perf`/flamegraph profiling — this machine is macOS, not
+  Linux, so `perf` isn't available; macOS-native profiling (`Instruments`,
+  `sample`) wasn't run either. The exit criterion (zero allocations) is
+  met and measured, not just the flamegraph nicety skipped silently.
 
 - [ ] **Phase 7 — Evaluation & Writeup**
   Final precision/recall/FPR by difficulty tier, case-study sanity check, README.
