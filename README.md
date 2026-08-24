@@ -240,9 +240,25 @@ data-dependent branch on the split outcome to mispredict. Leaf nodes
 self-loop (left == right == their own index, threshold == +inf), so a
 path that reaches its leaf early just stays there for the remaining
 iterations rather than needing a separate "have I hit a leaf yet?"
-branch. On a real 120-pattern run (177 trees, 38,272 held-out rows), the
+branch. On a real 120-pattern run (200 trees, 38,272 held-out rows), the
 C++ evaluator's output matched Python's bit-for-bit — 0.0 max absolute
 difference.
+
+`spoofwatch_pipeline` (`cpp/src/pipeline.cpp`) assembles the full hot path
+into one process — parse -> `OrderBook` -> `FeatureEngine` -> `TreeModel`
+— scoring every `NEW` order in a single pass, rather than the separate
+file-chained tools above:
+
+```bash
+./build/spoofwatch_pipeline \
+  data/synthetic/AAPL_2012-06-21/message_augmented.csv \
+  data/synthetic/AAPL_2012-06-21/export/model.bin \
+  data/synthetic/AAPL_2012-06-21/scored.csv
+```
+
+This is Phase 6 groundwork — per-stage latency histograms and a
+sustained-throughput benchmark against it are still to come (see
+`docs/PHASES.md`).
 
 ## License
 

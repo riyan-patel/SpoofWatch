@@ -84,18 +84,40 @@ design rationale.
   scores 0 recall — synthetic manipulator participants are single-use
   identities with no prior history, so their historical cancel_rate at
   submission time is uninformative by construction. The model clears that
-  bar comfortably (e.g. F1 0.46, PR-AUC ~130x the base positive rate on a
-  120-pattern run), driven mostly by `order_to_trade_ratio`,
-  `mean_lifetime_ns`, and `cancel_rate` rather than the layering-specific
-  features. Recall is uneven and sample-size-sensitive across difficulty
-  tier and pattern type run to run (single trading day, a few hundred
-  positives total) — reported via `recall_by_group`, not smoothed over.
-  Precision/recall/F1 are computed at LightGBM's default 0.5 threshold,
-  which is a poor operating point under this much class imbalance;
-  PR-AUC is printed alongside as the more honest ranking-quality number,
-  and picking a real deployment threshold is left to Phase 7. 14 pytest
-  tests cover the label join (including multi-order layering patterns)
-  and metric functions against hand-computed values.
+  bar comfortably. Recall is uneven and sample-size-sensitive across
+  difficulty tier and pattern type run to run (single trading day, a few
+  hundred positives total) — reported via `recall_by_group`, not smoothed
+  over. Precision/recall/F1 are computed at LightGBM's default 0.5
+  threshold, which is a poor operating point under this much class
+  imbalance; PR-AUC is printed alongside as the more honest ranking-quality
+  number, and picking a real deployment threshold is left to Phase 7.
+  14 pytest tests cover the label join (including multi-order layering
+  patterns) and metric functions against hand-computed values.
+
+  **Correction (found during Phase 6 prep, fixed in the same commit as
+  Phase 6):** the original `is_unbalance=True` config, with the
+  ~500-600:1 negative:positive ratio here and no regularization, was
+  silently producing raw scores in the hundreds of thousands on ordinary
+  background orders (sigmoid saturating to exactly 1.0) — invisible to
+  the precision/recall/F1/PR-AUC metrics above, since none of them depend
+  on score magnitude, only on rank or a 0.5 threshold. Root cause: a
+  handful of feature vectors are shared between positive and negative
+  labels (a brand-new participant's very first order looks identical
+  whether it's ordinary or the first leg of an injected pattern), and
+  leaf-wise boosting kept fruitlessly re-splitting around that overlap
+  every round. Replaced with a capped `scale_pos_weight` (min(ratio, 50))
+  plus `max_depth`/`min_child_samples`/`reg_lambda` regularization — max
+  abs raw score dropped from 431,086 to ~17 on a 120-pattern run, with no
+  change to the model's classification/ranking metrics, and feature
+  importance now spreads across the actual behavioral features
+  (`size_vs_baseline_ratio`, `layering_score_ask/bid`) instead of
+  concentrating on `mean_lifetime_ns == 0` (a "brand-new participant"
+  proxy that's an artifact of how the injection pipeline always mints a
+  fresh manipulator identity, not a demonstration of learned spoofing
+  detection — worth keeping in mind before reading too much into a
+  perfect-looking score). An early-stopping-based alternative was tried
+  first and rejected: with only ~40 validation positives, it locked onto
+  that single spurious split after one boosting round.
 
 - [x] **Phase 5 — Hot-Path Inference Integration**
   Branchless C++ tree evaluator or ONNX Runtime, zero-allocation event loop.
@@ -129,6 +151,14 @@ design rationale.
 - [ ] **Phase 6 — Benchmarking & Profiling**
   Per-stage p50/p99/p99.9 latency, perf/flamegraphs, sustained throughput test.
   Exit: zero heap allocations observed in steady-state hot path.
+  In progress: `spoofwatch_pipeline` (`cpp/src/pipeline.cpp`) assembles
+  the full hot path into one process for the first time — parse ->
+  `OrderBook` -> `FeatureEngine` -> `TreeModel`, scoring every `NEW`
+  order — where previously each stage was a separate CLI tool chained
+  through files. Still needed: per-stage latency instrumentation
+  (`clock_gettime(CLOCK_MONOTONIC)` histograms), a sustained-throughput
+  replay reporting p50/p99/p99.9, and confirming zero heap allocations in
+  steady state (via `perf`/an allocation-trapping build, not assumption).
 
 - [ ] **Phase 7 — Evaluation & Writeup**
   Final precision/recall/FPR by difficulty tier, case-study sanity check, README.

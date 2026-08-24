@@ -64,15 +64,43 @@ def main() -> None:
     )
     baseline_metrics = classification_metrics(test["label"].to_numpy(), baseline_pred)
 
+    # `is_unbalance=True` scales the positive class by the full
+    # negative:positive ratio, which is ~500-600:1 here. Combined with
+    # unregularized leaf-wise growth, that used to blow up raw scores into
+    # the hundreds of thousands on some inputs (sigmoid saturating to
+    # exactly 1.0) — a handful of feature vectors are shared between
+    # positive and negative labels in this dataset (a brand-new
+    # participant's very first order looks identical whether it's
+    # ordinary or the first leg of an injected pattern), and the model
+    # kept fruitlessly re-splitting around that irreducible overlap every
+    # boosting round. A capped scale_pos_weight plus leaf/regularization
+    # limits keep raw scores sane without that blowup.
+    #
+    # (Early stopping on a held-out validation slice was tried instead of
+    # the depth/leaf caps below, but with only ~40 validation positives it
+    # locked onto a single spurious split — mean_lifetime_ns == 0, a proxy
+    # for "brand-new participant" — after one round, collapsing to a
+    # 1-tree model with misleadingly perfect metrics. The fixed-size,
+    # regularized ensemble below is more robust and, as a side effect,
+    # spreads feature importance across the actual behavioral features
+    # instead of that one shortcut.)
+    scale_pos_weight = min(
+        (train["label"] == 0).sum() / max((train["label"] == 1).sum(), 1), 50.0
+    )
+
     model = lgb.LGBMClassifier(
         n_estimators=200,
         num_leaves=15,
+        max_depth=6,
+        min_child_samples=20,
+        reg_lambda=1.0,
         learning_rate=0.05,
-        is_unbalance=True,
+        scale_pos_weight=scale_pos_weight,
         random_state=args.seed,
         verbosity=-1,
     )
     model.fit(train[FEATURE_COLUMNS], train["label"])
+    print(f"scale_pos_weight={scale_pos_weight:.1f}")
     model_proba = model.predict_proba(test[FEATURE_COLUMNS])[:, 1]
     model_pred = model.predict(test[FEATURE_COLUMNS])
     model_metrics = classification_metrics(test["label"].to_numpy(), model_pred)

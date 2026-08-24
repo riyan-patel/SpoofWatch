@@ -35,6 +35,9 @@ target_link_libraries(spoofwatch_features PRIVATE spoofwatch_core)
 add_executable(spoofwatch_infer_validate cpp/src/infer_validate.cpp)
 target_link_libraries(spoofwatch_infer_validate PRIVATE spoofwatch_core)
 
+add_executable(spoofwatch_pipeline cpp/src/pipeline.cpp)
+target_link_libraries(spoofwatch_pipeline PRIVATE spoofwatch_core)
+
 if(SPOOFWATCH_BUILD_TESTS)
   include(FetchContent)
   FetchContent_Declare(
