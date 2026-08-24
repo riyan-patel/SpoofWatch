@@ -97,9 +97,34 @@ design rationale.
   tests cover the label join (including multi-order layering patterns)
   and metric functions against hand-computed values.
 
-- [ ] **Phase 5 — Hot-Path Inference Integration**
+- [x] **Phase 5 — Hot-Path Inference Integration**
   Branchless C++ tree evaluator or ONNX Runtime, zero-allocation event loop.
   Exit: C++ inference output matches Python model within float tolerance.
+  Done: `python/training/export_model.py` flattens a trained LightGBM
+  booster's trees into a small binary format (`spoofwatch_features`-style
+  flat node arrays, magic-tagged, no external dependency — verified
+  empirically that LightGBM's predicted probability is exactly
+  sigmoid(sum of each tree's leaf value), no hidden bias term).
+  `cpp/include/spoofwatch/tree_model.hpp` / `cpp/src/tree_model.cpp` load
+  that file once at construction and evaluate it branchless: every tree is
+  walked for a fixed `kMaxDepth` (16) iterations regardless of its actual
+  depth, with the next node chosen via `left + go_right * (right - left)`
+  arithmetic instead of an if/else, so there's no data-dependent branch to
+  mispredict on the split outcome. Leaf nodes self-loop (left == right ==
+  self, threshold == +inf) so a path that reaches its leaf early just
+  stays there for the remaining iterations — no separate "have I hit a
+  leaf yet?" branch either. `predict_proba()` itself never allocates.
+  `spoofwatch_infer_validate` cross-checks the C++ evaluator against
+  Python-computed reference predictions
+  (`train.py --export-dir` writes both `model.bin` and
+  `reference_predictions.csv`); on a 120-pattern real run (177 trees, 8
+  features, max depth 14, 38,272 test rows) the match was bit-exact — 0.0
+  max abs diff, not just "within tolerance." 4 new C++ unit tests
+  (including one specifically exercising the self-loop convergence trick
+  on an asymmetric-depth tree) and 3 new Python tests (round-trip via an
+  independent from-scratch binary parser, plus rejection of feature-order
+  mismatches and non-binary objectives) — 43 C++ / 17 Python tests total,
+  all passing.
 
 - [ ] **Phase 6 — Benchmarking & Profiling**
   Per-stage p50/p99/p99.9 latency, perf/flamegraphs, sustained throughput test.

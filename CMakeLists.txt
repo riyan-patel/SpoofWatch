@@ -19,6 +19,7 @@ add_library(spoofwatch_core
   cpp/src/price_level_book.cpp
   cpp/src/order_book.cpp
   cpp/src/feature_engine.cpp
+  cpp/src/tree_model.cpp
 )
 target_include_directories(spoofwatch_core PUBLIC cpp/include)
 
@@ -30,6 +31,9 @@ target_link_libraries(spoofwatch_validate_book PRIVATE spoofwatch_core)
 
 add_executable(spoofwatch_features cpp/src/feature_dump.cpp)
 target_link_libraries(spoofwatch_features PRIVATE spoofwatch_core)
+
+add_executable(spoofwatch_infer_validate cpp/src/infer_validate.cpp)
+target_link_libraries(spoofwatch_infer_validate PRIVATE spoofwatch_core)
 
 if(SPOOFWATCH_BUILD_TESTS)
   include(FetchContent)
@@ -50,6 +54,7 @@ if(SPOOFWATCH_BUILD_TESTS)
     cpp/tests/ring_buffer_test.cpp
     cpp/tests/incremental_stats_test.cpp
     cpp/tests/feature_engine_test.cpp
+    cpp/tests/tree_model_test.cpp
   )
   target_link_libraries(spoofwatch_tests PRIVATE spoofwatch_core GTest::gtest_main)
   include(GoogleTest)

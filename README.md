@@ -33,7 +33,7 @@ message stream          |                         |
                            v                     v
                           [3] Feature Vector
                                   v
-                    [4] ML Inference (branchless GBT / ONNX)
+                    [4] ML Inference (branchless GBT evaluator)
                                   v
                     [5] Alert Emitter (flag + evidence log)
 
@@ -52,7 +52,7 @@ or blocks. Every data structure is fixed-size, pre-allocated at startup.
 | Book structure | Fixed-size price-level array / intrusive list, no `std::map` |
 | Feature windows | Fixed-capacity ring buffers, incremental updates only |
 | Model training | Python 3.11, LightGBM (+ optional PyTorch autoencoder) |
-| Hot-path inference | Hand-rolled branchless tree evaluator or ONNX Runtime C++ API |
+| Hot-path inference | Hand-rolled branchless tree evaluator (`TreeModel`, see below) |
 | Data source | [LOBSTER](https://lobsterdata.com) message-level L3 data |
 | Benchmarking | `perf`, `clock_gettime(CLOCK_MONOTONIC)`, flame graphs |
 
@@ -209,6 +209,40 @@ honest ranking-quality number, and recall is broken out by difficulty
 tier and pattern type rather than averaged away — it's uneven and
 sample-size-sensitive run to run, which is expected with a few hundred
 positives total, not hidden.
+
+## Hot-path inference
+
+`TreeModel` (`cpp/include/spoofwatch/tree_model.hpp`) evaluates a trained
+LightGBM model inline, with no LightGBM or ONNX Runtime dependency in the
+hot path and zero allocation in `predict_proba()`. `python/training/
+export_model.py` flattens the booster's trees into a small binary format
+(verified empirically: LightGBM's predicted probability is exactly
+sigmoid(sum of each tree's leaf value), no hidden bias term to replicate).
+`train.py --export-dir <dir>` writes both `model.bin` and a
+`reference_predictions.csv` for cross-validation:
+
+```bash
+python -m python.training.train \
+  data/synthetic/AAPL_2012-06-21/features.csv \
+  data/synthetic/AAPL_2012-06-21/ground_truth.csv \
+  --export-dir data/synthetic/AAPL_2012-06-21/export
+
+./build/spoofwatch_infer_validate \
+  data/synthetic/AAPL_2012-06-21/export/model.bin \
+  data/synthetic/AAPL_2012-06-21/export/reference_predictions.csv
+```
+
+`predict_proba()` is branchless in the sense that matters for a real-time
+engine: every tree is walked for a fixed number of iterations regardless
+of its actual depth, and the next node is chosen with arithmetic
+(`left + go_right * (right - left)`) instead of an if/else, so there's no
+data-dependent branch on the split outcome to mispredict. Leaf nodes
+self-loop (left == right == their own index, threshold == +inf), so a
+path that reaches its leaf early just stays there for the remaining
+iterations rather than needing a separate "have I hit a leaf yet?"
+branch. On a real 120-pattern run (177 trees, 38,272 held-out rows), the
+C++ evaluator's output matched Python's bit-for-bit — 0.0 max absolute
+difference.
 
 ## License
 

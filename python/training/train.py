@@ -23,6 +23,7 @@ from python.eval.metrics import (
 )
 from python.injection.injector import load_ground_truth
 from python.training.dataset import FEATURE_COLUMNS, build_training_table, time_based_split
+from python.training.export_model import export_lightgbm_model
 
 
 def _print_metrics(name: str, m: dict) -> None:
@@ -40,6 +41,12 @@ def main() -> None:
     parser.add_argument("--test-frac", type=float, default=0.2)
     parser.add_argument("--baseline-quantile", type=float, default=0.99)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--export-dir", type=Path, default=None,
+        help="if set, writes model.bin (for the C++ branchless evaluator) and "
+             "reference_predictions.csv (test-set features + Python-computed "
+             "probability, for cross-validating the C++ side) into this directory",
+    )
     args = parser.parse_args()
 
     table = build_training_table(args.features_csv, args.ground_truth_csv)
@@ -105,6 +112,20 @@ def main() -> None:
     print("\nfeature importances:")
     for name, imp in importances:
         print(f"  {name:>24s}  {imp}")
+
+    if args.export_dir is not None:
+        args.export_dir.mkdir(parents=True, exist_ok=True)
+        model_bin = args.export_dir / "model.bin"
+        depth = export_lightgbm_model(model.booster_, FEATURE_COLUMNS, model_bin)
+        reference = test[["order_id"] + FEATURE_COLUMNS].copy()
+        reference["proba"] = model_proba
+        reference["label"] = test["label"].to_numpy()
+        reference_path = args.export_dir / "reference_predictions.csv"
+        reference.to_csv(reference_path, index=False)
+        print(
+            f"\nExported {model_bin} (max tree depth {depth}) and "
+            f"{reference_path} ({len(reference)} rows) for C++ cross-validation."
+        )
 
 
 if __name__ == "__main__":
