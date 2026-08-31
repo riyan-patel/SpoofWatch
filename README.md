@@ -202,13 +202,79 @@ python -m python.training.train \
   data/synthetic/AAPL_2012-06-21/ground_truth.csv
 ```
 
-Precision/recall/F1 are reported at LightGBM's default 0.5 threshold,
-which is a poor operating point given how imbalanced a single trading
-day's injected-pattern rate is; PR-AUC is printed alongside as a more
-honest ranking-quality number, and recall is broken out by difficulty
-tier and pattern type rather than averaged away — it's uneven and
-sample-size-sensitive run to run, which is expected with a few hundred
-positives total, not hidden.
+`train.py` uses a three-way chronological split (train / val / test): the
+model is fit on `train`, an operating threshold is chosen on `val` by
+maximizing F1 (`python/eval/metrics.py::select_threshold_by_f1`), and only
+then applied to score `test` — so the reported test metrics reflect a
+threshold picked without ever looking at the data it's graded on, the way
+a real deployment would have to pick one. LightGBM's default 0.5 is still
+printed for reference, since it's a poor operating point given how
+imbalanced a single trading day's injected-pattern rate is; PR-AUC is
+printed alongside as a threshold-free ranking-quality number, and recall
+is broken out by difficulty tier and pattern type at the chosen threshold
+rather than averaged away — it's uneven and sample-size-sensitive run to
+run, which is expected with a few hundred positives total, not hidden.
+The chosen threshold is written to `operating_threshold.txt` alongside
+the exported model (see below) for anything downstream that needs it.
+
+## Case study: sanity-checking against a real prosecution
+
+Synthetic injection is the primary evaluation methodology, but it can only
+ever grade a detector against patterns shaped like the ones it was trained
+on. `python/eval/case_study.py` adds a secondary, qualitative check against
+one publicly documented case — Michael Coscia / Panther Energy Trading
+(CFTC enforcement action 2013, first criminal spoofing conviction under
+Dodd-Frank 2015): a large order placed one tick behind the touch, pulled
+within a fraction of a second, repeated thousands of times a day,
+alternating sides. It injects a tightly-spaced, repeated burst of that
+shape from a single synthetic participant and scores it with a normally
+trained model (not tuned to this burst):
+
+```bash
+python -m python.eval.case_study \
+  data/lobster_samples/AAPL_2012-06-21_10/message_10.csv \
+  data/lobster_samples/AAPL_2012-06-21_10/orderbook_10.csv \
+  data/synthetic/AAPL_2012-06-21/features.csv \
+  data/synthetic/AAPL_2012-06-21/ground_truth.csv \
+  data/synthetic/coscia_case_study \
+  --num-cycles 15
+```
+
+**Original finding, reproduced across seeds:** trained on the standard
+injection pipeline, the model flagged the manipulator's *first* cycle
+(proba ~0.94-0.96) but missed essentially every repeat cycle from that
+same participant (burst recall ~0.07 over 15 cycles, background
+false-positive rate ~0.001 on the same file). Root cause: the standard
+injection pipeline (`python/injection/injector.py`) mints a brand-new
+synthetic participant_id per pattern and never reuses one, so the
+training data never contained a *second* manipulative act from the same
+identity — the model had partly learned "this participant's rolling
+history is empty" (`mean_lifetime_ns == 0`, `cancel_rate == 0`) as a proxy
+for manipulation, echoing Phase 4's feature-importance caveat in
+`docs/PHASES.md` about that same signal, rather than the cancel-heavy
+behavior itself.
+
+**Fix:** `inject()` takes a `--repeat-manipulator-prob` argument; with it
+set above 0, some injected patterns reuse an already-used manipulator_id
+instead of always minting a new one, so training data includes repeat
+offenders whose own rolling history is no longer empty by the time they
+manipulate again:
+
+```bash
+python -m python.injection.injector \
+  data/lobster_samples/AAPL_2012-06-21_10/message_10.csv \
+  data/lobster_samples/AAPL_2012-06-21_10/orderbook_10.csv \
+  data/synthetic/AAPL_2012-06-21 \
+  --patterns-per-tier 40 --repeat-manipulator-prob 0.3 --seed 0
+```
+
+Retraining on that data and re-running the same 15-cycle case study
+(same seed) improved burst recall from ~0.07 to **0.33** (5/15 cycles,
+including several mid-burst cycles, not just the first) at a background
+false-positive rate of 0.0015 — a real improvement, not a full fix: most
+repeat cycles are still missed. This is reported honestly rather than
+declared solved; `case_study.py` prints this same diagnosis automatically
+when it detects lower recall on post-first cycles than the burst overall.
 
 ## Hot-path inference
 

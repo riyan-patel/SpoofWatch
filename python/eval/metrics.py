@@ -41,6 +41,32 @@ def naive_cancel_rate_baseline_predictions(
     return predictions, threshold
 
 
+def select_threshold_by_f1(y_true: np.ndarray, y_proba: np.ndarray) -> tuple[float, dict]:
+    """Picks the probability threshold that maximizes F1 on the given
+    (labeled) split, instead of using LightGBM's default 0.5 — a poor
+    operating point under this dataset's class imbalance (precision/recall/
+    F1 at 0.5 are dominated by wherever the sigmoid happens to sit, not by
+    the actual precision/recall tradeoff available).
+
+    Only the scores that actually appear as candidate cutoffs change the
+    resulting predictions, so every unique predicted probability (plus 0.0,
+    to allow "flag everything") is tried exhaustively rather than sweeping
+    an arbitrary grid.
+    """
+    y_true = np.asarray(y_true).astype(bool)
+    y_proba = np.asarray(y_proba)
+
+    candidates = np.unique(np.concatenate([[0.0], y_proba]))
+    best_threshold = 0.5
+    best_metrics = classification_metrics(y_true, y_proba >= best_threshold)
+    for threshold in candidates:
+        m = classification_metrics(y_true, y_proba >= threshold)
+        if m["f1"] > best_metrics["f1"]:
+            best_threshold, best_metrics = float(threshold), m
+
+    return best_threshold, best_metrics
+
+
 def recall_by_group(
     test: pd.DataFrame, y_pred: np.ndarray, ground_truth: pd.DataFrame, group_col: str,
 ) -> pd.Series:

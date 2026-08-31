@@ -6,6 +6,7 @@ from python.eval.metrics import (
     classification_metrics,
     naive_cancel_rate_baseline_predictions,
     recall_by_group,
+    select_threshold_by_f1,
 )
 
 
@@ -35,6 +36,24 @@ def test_naive_baseline_thresholds_on_train_quantile_only():
     pred, threshold = naive_cancel_rate_baseline_predictions(train, test, quantile=0.9)
     assert threshold == pytest.approx(0.91)
     assert list(pred) == [False, True]
+
+
+def test_select_threshold_by_f1_finds_perfect_split_below_default_0_5():
+    y_true = np.array([1, 1, 1, 0, 0])
+    y_proba = np.array([0.30, 0.35, 0.40, 0.10, 0.20])
+    threshold, metrics = select_threshold_by_f1(y_true, y_proba)
+    assert threshold == pytest.approx(0.30)
+    assert metrics["f1"] == 1.0
+    assert metrics["precision"] == 1.0
+    assert metrics["recall"] == 1.0
+
+
+def test_select_threshold_by_f1_never_does_worse_than_default_0_5():
+    y_true = np.array([1, 0, 1, 0, 1])
+    y_proba = np.array([0.9, 0.8, 0.7, 0.6, 0.5])
+    threshold, metrics = select_threshold_by_f1(y_true, y_proba)
+    default_metrics = classification_metrics(y_true, y_proba >= 0.5)
+    assert metrics["f1"] >= default_metrics["f1"]
 
 
 def test_recall_by_group_only_scores_positive_orders():

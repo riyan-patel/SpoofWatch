@@ -59,3 +59,19 @@ def time_based_split(table: pd.DataFrame, test_frac: float = 0.2) -> tuple[pd.Da
     """
     split_idx = int(len(table) * (1 - test_frac))
     return table.iloc[:split_idx], table.iloc[split_idx:]
+
+
+def time_based_split_train_val_test(
+    table: pd.DataFrame, val_frac: float = 0.2, test_frac: float = 0.2,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Three-way chronological split: fit the model on `train`, pick an
+    operating threshold on `val`, and report final numbers on `test` only.
+    Picking a threshold on the same split it's then graded on overstates
+    how well that threshold will hold up live — `val` exists so the
+    reported test metrics reflect a threshold chosen without seeing the
+    test data at all, matching how it would actually be deployed.
+    """
+    n = len(table)
+    train_end = int(n * (1 - val_frac - test_frac))
+    val_end = int(n * (1 - test_frac))
+    return table.iloc[:train_end], table.iloc[train_end:val_end], table.iloc[val_end:]

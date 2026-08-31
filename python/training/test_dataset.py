@@ -1,6 +1,10 @@
 import pandas as pd
 
-from python.training.dataset import build_training_table, time_based_split
+from python.training.dataset import (
+    build_training_table,
+    time_based_split,
+    time_based_split_train_val_test,
+)
 
 
 def _write(tmp_path, features_rows, ground_truth_rows):
@@ -74,3 +78,11 @@ def test_time_based_split_is_chronological_not_random():
     train, test = time_based_split(table, test_frac=0.3)
     assert len(train) == 7 and len(test) == 3
     assert train["time"].max() < test["time"].min()
+
+
+def test_time_based_split_train_val_test_is_chronological_and_disjoint():
+    table = pd.DataFrame({"time": range(10), "label": [0] * 10})
+    train, val, test = time_based_split_train_val_test(table, val_frac=0.2, test_frac=0.3)
+    assert len(train) == 5 and len(val) == 2 and len(test) == 3
+    assert train["time"].max() < val["time"].min()
+    assert val["time"].max() < test["time"].min()

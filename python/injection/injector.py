@@ -45,7 +45,7 @@ TIERS: list[patterns_mod.Tier] = ["easy", "medium", "hard"]
 PATTERN_TYPES: list[patterns_mod.PatternType] = ["spoofing", "layering"]
 
 
-def _load_messages(message_csv: Path) -> pd.DataFrame:
+def load_messages(message_csv: Path) -> pd.DataFrame:
     df = pd.read_csv(message_csv, header=None, names=MESSAGE_COLUMNS)
     df["price"] = df["price"].astype(np.int64)
     df["order_id"] = df["order_id"].astype(np.int64)
@@ -65,11 +65,11 @@ def load_ground_truth(ground_truth_csv: Path) -> pd.DataFrame:
     return pd.read_csv(ground_truth_csv, dtype={"order_ids": str})
 
 
-def _load_orderbook(orderbook_csv: Path) -> pd.DataFrame:
+def load_orderbook(orderbook_csv: Path) -> pd.DataFrame:
     return pd.read_csv(orderbook_csv, header=None)
 
 
-def _infer_tick_size(book_row: pd.Series, default: int = 100) -> int:
+def infer_tick_size(book_row: pd.Series, default: int = 100) -> int:
     ask_prices = book_row.iloc[0::4].to_numpy(dtype=np.int64)
     bid_prices = book_row.iloc[2::4].to_numpy(dtype=np.int64)
     diffs = np.concatenate([np.diff(np.sort(np.unique(ask_prices))),
@@ -108,12 +108,13 @@ def inject(
     output_dir: Path,
     patterns_per_tier: int = 15,
     num_background_participants: int = 200,
+    repeat_manipulator_prob: float = 0.0,
     seed: int = 0,
 ) -> None:
     rng = np.random.default_rng(seed)
 
-    messages = _load_messages(message_csv)
-    orderbook = _load_orderbook(orderbook_csv)
+    messages = load_messages(message_csv)
+    orderbook = load_orderbook(orderbook_csv)
     if len(messages) != len(orderbook):
         raise ValueError(
             f"message file ({len(messages)} rows) and orderbook file "
@@ -152,14 +153,32 @@ def inject(
     ]
     rng.shuffle(final_assignment)
 
+    # Every pattern gets a brand-new manipulator_id by default, so the
+    # model never sees a *second* manipulative act from an identity with
+    # real rolling history — Phase 7's Coscia case study found this makes
+    # the model partly learn "this participant's history is empty" as a
+    # manipulation proxy instead of the cancel-heavy behavior itself. With
+    # repeat_manipulator_prob > 0, some patterns reuse an already-used
+    # manipulator_id instead of minting a new one, so training data
+    # includes repeat offenders whose own history is no longer empty by
+    # the time they manipulate again.
+    used_manipulator_pids: list[int] = []
+    next_new_manipulator_index = 0
+
     patterns: list[patterns_mod.Pattern] = []
     for idx, (tier, ptype) in zip(injection_points, final_assignment):
         row = messages.iloc[idx]
         book_row = orderbook.iloc[idx]
         best_ask, best_bid = int(book_row.iloc[0]), int(book_row.iloc[2])
-        tick_size = _infer_tick_size(book_row)
+        tick_size = infer_tick_size(book_row)
         base_time = float(row["time"]) + 1e-6
-        manipulator_pid = participants_mod.next_manipulator_id(len(patterns))
+
+        if used_manipulator_pids and rng.random() < repeat_manipulator_prob:
+            manipulator_pid = int(rng.choice(used_manipulator_pids))
+        else:
+            manipulator_pid = participants_mod.next_manipulator_id(next_new_manipulator_index)
+            next_new_manipulator_index += 1
+            used_manipulator_pids.append(manipulator_pid)
 
         if ptype == "spoofing":
             pattern = patterns_mod.generate_spoofing_pattern(
@@ -226,6 +245,12 @@ def main() -> None:
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--patterns-per-tier", type=int, default=15)
     parser.add_argument("--num-background-participants", type=int, default=200)
+    parser.add_argument(
+        "--repeat-manipulator-prob", type=float, default=0.0,
+        help="probability a pattern reuses an already-used manipulator_id "
+             "instead of minting a new one, so training data includes "
+             "repeat offenders (see python/eval/case_study.py)",
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
@@ -235,6 +260,7 @@ def main() -> None:
         output_dir=args.output_dir,
         patterns_per_tier=args.patterns_per_tier,
         num_background_participants=args.num_background_participants,
+        repeat_manipulator_prob=args.repeat_manipulator_prob,
         seed=args.seed,
     )
 

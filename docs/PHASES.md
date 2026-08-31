@@ -183,9 +183,65 @@ design rationale.
   `sample`) wasn't run either. The exit criterion (zero allocations) is
   met and measured, not just the flamegraph nicety skipped silently.
 
-- [ ] **Phase 7 — Evaluation & Writeup**
+- [x] **Phase 7 — Evaluation & Writeup**
   Final precision/recall/FPR by difficulty tier, case-study sanity check, README.
   Exit: can walk the system end-to-end from memory and reproduce the numbers.
+  Done:
+  - Threshold selection: `python/eval/metrics.py::select_threshold_by_f1` picks
+    an operating threshold by maximizing F1, and `train.py` now does a
+    three-way chronological split (`time_based_split_train_val_test`) so the
+    threshold is chosen on a held-out `val` slice and only then applied to
+    `test` — the 0.5 default is still printed for reference, not used as the
+    reported operating point. The chosen threshold is written to
+    `operating_threshold.txt` alongside the exported model. Shared
+    model-fitting logic (scale_pos_weight cap + regularized LGBMClassifier)
+    factored out of `train.py` into `python/training/model.py` so the case
+    study below can reuse the exact same fitting procedure.
+  - Coscia case study: `python/eval/case_study.py` injects a repeated,
+    tightly-spaced spoofing burst from one synthetic participant, modeled on
+    Michael Coscia's documented CFTC/DOJ modus operandi, and scores it with
+    a model trained the normal way (not tuned to this burst).
+    **Original finding, reproduced across seeds:** trained on the standard
+    injection pipeline, the model flagged only the manipulator's first
+    cycle and missed essentially every repeat cycle from the same
+    participant (recall ~0.07 across a 15-cycle burst, background FPR
+    ~0.001 on the same file). Root cause: the standard injection pipeline
+    mints a brand-new synthetic participant_id per pattern and never
+    repeats one, so training data never contained a *second* manipulative
+    act from the same identity — the model had partly learned "this
+    participant's rolling history is empty" (`mean_lifetime_ns == 0`,
+    `cancel_rate == 0`) as a proxy for manipulation, per Phase 4's
+    feature-importance caveat, rather than the cancel-heavy behavior
+    itself.
+  - **Fix:** `inject()` gained a `--repeat-manipulator-prob` argument —
+    with it set above 0, some injected patterns reuse an already-used
+    manipulator_id instead of always minting a new one, giving the model
+    repeat-offender training examples whose own rolling history is no
+    longer empty. Retraining with `--repeat-manipulator-prob 0.3` and
+    re-running the identical 15-cycle case study (same seed) improved
+    burst recall from ~0.07 to **0.33** (catching several mid-burst
+    cycles, not just the first) at a background false-positive rate of
+    0.0015 — a real, measured improvement, not a claimed full fix; most
+    repeat cycles are still missed, and `case_study.py` prints this same
+    diagnosis automatically whenever post-first-cycle recall trails the
+    overall burst recall, rather than only on this one run. 2 new pytest
+    tests cover `repeat_manipulator_prob` at 0.0 (no reuse, matching prior
+    behavior exactly) and 1.0 (every pattern after the first reuses one
+    id); 1 more covers the case-study injection helper directly — 23
+    pytest tests total, all passing.
+  - End-to-end reproduction check: re-ran the full chain from a clean
+    build — injector -> `spoofwatch_features` -> `train.py` (both the
+    standard and repeat-enabled datasets) -> `spoofwatch_infer_validate`
+    (still bit-exact, 0.0 max abs diff, against the repeat-enabled export)
+    -> `spoofwatch_pipeline` (191,365 orders scored cleanly). Numbers
+    above were captured from these actual runs, not carried over from an
+    earlier session.
+  Known gap carried forward: the repeat-offender fix measurably helps but
+  doesn't fully close the gap — a natural Phase 8 candidate would be
+  richer per-participant features that don't reset to "empty" as cleanly
+  after a first manipulative act (e.g. a longer-horizon or persistent
+  manipulation-history feature), rather than only varying how often
+  manipulators repeat in training data.
 
 - [ ] **Phase 8 — Stretch (optional)**
   Multi-symbol support, unsupervised autoencoder comparison, SIMD feature computation.

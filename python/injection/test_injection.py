@@ -83,7 +83,7 @@ def _toy_message_and_orderbook(n=50):
         "size": sizes, "price": prices, "direction": directions,
     })
     # Minimal 1-level orderbook, repeated to 10-level column count so
-    # _infer_tick_size's fixed column strides still work.
+    # infer_tick_size's fixed column strides still work.
     row = [100100, 10, 100000, 10] * 10
     orderbook = pd.DataFrame([row] * n)
     return messages, orderbook
@@ -117,6 +117,41 @@ def test_inject_end_to_end(tmp_path):
     assert all_injected_ids.issubset(set(augmented["order_id"]))
     # injected order_ids never collide with background order_ids
     assert all_injected_ids.isdisjoint(set(messages["order_id"]))
+
+
+def test_repeat_manipulator_prob_zero_never_reuses_an_id(tmp_path):
+    messages, orderbook = _toy_message_and_orderbook()
+    msg_path = tmp_path / "message_10.csv"
+    book_path = tmp_path / "orderbook_10.csv"
+    messages.to_csv(msg_path, header=False, index=False)
+    orderbook.to_csv(book_path, header=False, index=False)
+
+    out_dir = tmp_path / "out"
+    injector.inject(
+        message_csv=msg_path, orderbook_csv=book_path, output_dir=out_dir,
+        patterns_per_tier=3, num_background_participants=5,
+        repeat_manipulator_prob=0.0, seed=7,
+    )
+    ground_truth = injector.load_ground_truth(out_dir / "ground_truth.csv")
+    assert ground_truth["participant_id"].nunique() == len(ground_truth)
+
+
+def test_repeat_manipulator_prob_one_reuses_after_the_first_pattern(tmp_path):
+    messages, orderbook = _toy_message_and_orderbook()
+    msg_path = tmp_path / "message_10.csv"
+    book_path = tmp_path / "orderbook_10.csv"
+    messages.to_csv(msg_path, header=False, index=False)
+    orderbook.to_csv(book_path, header=False, index=False)
+
+    out_dir = tmp_path / "out"
+    injector.inject(
+        message_csv=msg_path, orderbook_csv=book_path, output_dir=out_dir,
+        patterns_per_tier=3, num_background_participants=5,
+        repeat_manipulator_prob=1.0, seed=7,
+    )
+    ground_truth = injector.load_ground_truth(out_dir / "ground_truth.csv")
+    # every pattern after the first reuses the same one manipulator_id
+    assert ground_truth["participant_id"].nunique() == 1
 
 
 @pytest.mark.timeout(10)
