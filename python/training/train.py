@@ -19,11 +19,12 @@ from python.eval.metrics import (
     classification_metrics,
     naive_cancel_rate_baseline_predictions,
     recall_by_group,
-    select_threshold_by_f1,
+    select_threshold_by_macro_f1,
 )
 from python.injection.injector import load_ground_truth
 from python.training.dataset import (
     FEATURE_COLUMNS,
+    attach_group_columns,
     build_training_table,
     time_based_split_train_val_test,
 )
@@ -60,11 +61,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    ground_truth = load_ground_truth(args.ground_truth_csv)
     table = build_training_table(args.features_csv, args.ground_truth_csv)
+    table = attach_group_columns(table, ground_truth)
     train, val, test = time_based_split_train_val_test(
         table, val_frac=args.val_frac, test_frac=args.test_frac
     )
-    ground_truth = load_ground_truth(args.ground_truth_csv)
 
     print(
         f"{len(table)} orders total ({table['label'].sum()} manipulative) — "
@@ -107,10 +109,17 @@ def main() -> None:
     # Threshold is selected on `val` (never seen during fitting) and only
     # then applied to `test`, so the reported test numbers reflect a
     # threshold chosen the way a deployed system would have to choose one
-    # — without access to the data it's about to be graded on.
+    # — without access to the data it's about to be graded on. Maximizing
+    # macro-averaged F1 across pattern_type (rather than one pooled F1)
+    # matters even on a single symbol: spoofing patterns are single-order
+    # and layering patterns are multi-order, so layering already outweighs
+    # spoofing in raw row count here too — pooled F1 could otherwise trade
+    # away the whole spoofing class for a marginal layering-precision gain
+    # (see python/eval/multi_symbol.py, where pooling across symbols made
+    # this failure mode obvious).
     val_proba = model.predict_proba(val[FEATURE_COLUMNS])[:, 1]
-    operating_threshold, val_metrics_at_threshold = select_threshold_by_f1(
-        val["label"].to_numpy(), val_proba
+    operating_threshold, val_metrics_at_threshold = select_threshold_by_macro_f1(
+        val["label"].to_numpy(), val_proba, val["pattern_type"]
     )
 
     model_proba = model.predict_proba(test[FEATURE_COLUMNS])[:, 1]

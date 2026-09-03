@@ -7,6 +7,7 @@ from python.eval.metrics import (
     naive_cancel_rate_baseline_predictions,
     recall_by_group,
     select_threshold_by_f1,
+    select_threshold_by_macro_f1,
 )
 
 
@@ -54,6 +55,28 @@ def test_select_threshold_by_f1_never_does_worse_than_default_0_5():
     threshold, metrics = select_threshold_by_f1(y_true, y_proba)
     default_metrics = classification_metrics(y_true, y_proba >= 0.5)
     assert metrics["f1"] >= default_metrics["f1"]
+
+
+def test_select_threshold_by_macro_f1_does_not_zero_out_the_minority_group():
+    # A large "layering" positive class (100 rows, all proba 1.0) and a
+    # small "spoofing" positive class (3 rows, all proba 0.8), plus 30
+    # false positives at proba 0.85. Pushing the threshold to 1.0 removes
+    # every false positive at the cost of the entire spoofing group's
+    # recall (0/3) — and still wins on pooled F1, because 100 layering
+    # rows dominate the pooled numerator. Regression for exactly the
+    # failure `select_threshold_by_f1` can produce under a minority class.
+    y_true = np.array([1] * 100 + [1] * 3 + [0] * 30 + [0] * 20)
+    y_proba = np.array([1.0] * 100 + [0.8] * 3 + [0.85] * 30 + [0.0] * 20)
+    groups = pd.Series(["layering"] * 100 + ["spoofing"] * 3 + [None] * 30 + [None] * 20)
+
+    pooled_threshold, pooled_metrics = select_threshold_by_f1(y_true, y_proba)
+    assert pooled_threshold >= 0.9
+    spoofing_mask = (y_true == 1) & (groups == "spoofing").to_numpy()
+    assert np.all(y_proba[spoofing_mask] < pooled_threshold)  # pooled sacrifices spoofing
+
+    macro_threshold, macro_metrics = select_threshold_by_macro_f1(y_true, y_proba, groups)
+    assert np.all(y_proba[spoofing_mask] >= macro_threshold)  # macro keeps catching it
+    assert macro_metrics["recall"] == 1.0
 
 
 def test_recall_by_group_only_scores_positive_orders():

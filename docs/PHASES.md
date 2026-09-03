@@ -245,3 +245,56 @@ design rationale.
 
 - [ ] **Phase 8 — Stretch (optional)**
   Multi-symbol support, unsupervised autoencoder comparison, SIMD feature computation.
+  Multi-symbol support done:
+  - `data/lobster_samples/` now holds 5 LOBSTER datasets instead of 1:
+    `AAPL_2012-06-21_10` (original), `AMZN_2012-06-21_10`,
+    `MSFT_2012-06-21_10`, `INTC_2012-06-21_10` (level-10), and
+    `GOOG_2012-06-21_5` (level-5 — a different book depth than the
+    others, deliberately kept rather than discarded, since the pipeline
+    is level-agnostic and it's a useful diversity check). The injection/
+    training/eval code itself needed zero changes to support this —
+    "AAPL" only ever appeared in docstring usage examples, never in
+    logic — confirmed by running the full injector -> `spoofwatch_
+    features` -> `train.py` chain against AMZN with no code changes
+    before building anything new.
+  - New `python/eval/multi_symbol.py` auto-discovers every `<TICKER>_
+    <DATE>_<LEVEL>` dataset folder, injects and splits each one
+    chronologically on its own (splitting "by time" across different
+    symbols on the same calendar day wouldn't mean anything), then pools
+    the per-symbol train/val/test slices: one model fit on the pooled
+    train, one threshold chosen on the pooled val, final metrics on the
+    pooled test — both overall and broken out by symbol. This grows the
+    positive count from ~350 (one symbol) to ~1750 (five symbols),
+    directly addressing the "single trading day, a few hundred
+    positives" caveat that recurs through Phases 4-7.
+  - **Real finding, from the first real pooled run:** pooling exposed a
+    flaw in Phase 7's `select_threshold_by_f1` that a single symbol's
+    smaller sample hadn't triggered. Layering patterns are multi-order
+    and vastly outnumber single-order spoofing patterns in raw row
+    count; pooled across 5 symbols, the F1-maximizing threshold search
+    found it could push the cutoff up to ~1.0, which discarded a few
+    stray false positives and **zeroed out spoofing recall entirely
+    (0.0) while barely denting layering recall (0.67)** — and still won
+    on pooled F1, since the metric doesn't care that it wrote off a
+    whole pattern type to get there.
+  - **Fix:** added `select_threshold_by_macro_f1` (`python/eval/
+    metrics.py`) — maximizes the *average* of per-pattern-type F1
+    instead of one pooled F1, so a threshold that zeroes a minority
+    group can't win. Applied it everywhere a threshold gets chosen
+    (`train.py`, `case_study.py`, `multi_symbol.py`) for consistency,
+    not just where the bug was caught. Re-running the same pooled
+    5-symbol evaluation: spoofing recall 0.0 -> **0.71**, layering 0.67
+    -> **0.84**, overall recall 0.58 -> **0.82**, at a precision cost of
+    0.96 -> 0.77 (FPR still ~0.05%). Verified the single-symbol path is
+    unaffected — re-ran both the original and repeat-enabled AAPL
+    datasets through `train.py` afterward and got byte-identical numbers
+    to before the change, since single-symbol runs never hit the
+    degenerate all-1.0-threshold case in the first place. New
+    `attach_group_columns` helper (`python/training/dataset.py`) moved
+    group-labeling logic that used to live only in `case_study.py` so
+    both single- and multi-symbol paths share it; 4 new pytest tests
+    (macro-F1 threshold regression, dataset discovery x2, group-column
+    attachment) — 27 pytest tests total, all passing, plus all 50 C++
+    tests unaffected.
+  Not started: unsupervised autoencoder comparison, SIMD feature
+  computation.

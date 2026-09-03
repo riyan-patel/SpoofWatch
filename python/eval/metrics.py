@@ -67,6 +67,52 @@ def select_threshold_by_f1(y_true: np.ndarray, y_proba: np.ndarray) -> tuple[flo
     return best_threshold, best_metrics
 
 
+def select_threshold_by_macro_f1(
+    y_true: np.ndarray, y_proba: np.ndarray, groups: pd.Series,
+) -> tuple[float, dict]:
+    """Like `select_threshold_by_f1`, but instead of maximizing one pooled
+    F1, maximizes the AVERAGE of per-group F1 (each group's own recall
+    combined with the overall precision at that threshold) — `groups` is a
+    label per row (e.g. pattern_type), only meaningful for positives.
+
+    Plain pooled F1 can be maximized by writing off an entire minority
+    group: pooling multiple symbols' injected patterns exposed exactly
+    this — layering patterns are multi-order and vastly outnumber
+    single-order spoofing patterns in raw row count, so a threshold that
+    pushes spoofing recall to 0.0 to squeeze out a marginal precision gain
+    on layering can still win on pooled F1, even though it's a worse
+    detector overall. Averaging per-group F1 means a group that's been
+    zeroed out drags the average down hard enough that it can't win.
+    """
+    y_true = np.asarray(y_true).astype(bool)
+    y_proba = np.asarray(y_proba)
+    groups = pd.Series(groups).reset_index(drop=True)
+    positive_groups = groups[y_true]
+    unique_groups = [g for g in positive_groups.unique() if pd.notna(g)]
+
+    def macro_f1_at(threshold: float) -> float:
+        m = classification_metrics(y_true, y_proba >= threshold)
+        precision = m["precision"]
+        f1s = []
+        for g in unique_groups:
+            mask = y_true & (groups == g).to_numpy()
+            recall_g = float(np.mean(y_proba[mask] >= threshold)) if mask.any() else 0.0
+            f1s.append(
+                2 * precision * recall_g / (precision + recall_g) if (precision + recall_g) else 0.0
+            )
+        return float(np.mean(f1s)) if f1s else m["f1"]
+
+    candidates = np.unique(np.concatenate([[0.0], y_proba]))
+    best_threshold = 0.5
+    best_score = macro_f1_at(best_threshold)
+    for threshold in candidates:
+        score = macro_f1_at(threshold)
+        if score > best_score:
+            best_threshold, best_score = float(threshold), score
+
+    return best_threshold, classification_metrics(y_true, y_proba >= best_threshold)
+
+
 def recall_by_group(
     test: pd.DataFrame, y_pred: np.ndarray, ground_truth: pd.DataFrame, group_col: str,
 ) -> pd.Series:

@@ -348,6 +348,48 @@ profiling wasn't run — this is a macOS machine, not Linux — so that part
 of Phase 6 is a known gap, not a silently skipped one; see
 `docs/PHASES.md`.
 
+## Multi-symbol evaluation (Phase 8)
+
+Every number above comes from one stock, one trading day — `data/
+lobster_samples/` now also holds AMZN, MSFT, INTC (level-10) and GOOG
+(level-5, a different book depth, kept deliberately as a diversity check).
+The injection/training/eval code needed no changes to support this — it
+was already symbol-agnostic, just taking file paths — confirmed by running
+the full pipeline against AMZN before writing anything new.
+
+`python/eval/multi_symbol.py` auto-discovers every `<TICKER>_<DATE>_
+<LEVEL>` dataset folder, injects and splits each one chronologically on
+its own, then pools the per-symbol train/val/test slices — one model fit
+on the pooled train, one threshold chosen on the pooled val, final metrics
+on the pooled test, overall and by symbol:
+
+```bash
+python -m python.eval.multi_symbol \
+  --patterns-per-tier 40 --repeat-manipulator-prob 0.3 --seed 0
+```
+
+This grows the evaluation from ~350 positives (one symbol) to ~1750 (five
+symbols) — and the first real pooled run immediately exposed a flaw in
+Phase 7's threshold selection that one symbol's smaller sample never
+triggered: layering patterns are multi-order and vastly outnumber
+single-order spoofing patterns in raw row count, so maximizing one pooled
+F1 let the threshold search push the cutoff up to ~1.0, which zeroed out
+spoofing recall entirely (0.0) while barely touching layering recall
+(0.67) — and still won on pooled F1, since that metric doesn't care that
+it wrote off a whole pattern type to get there.
+
+**Fix:** `select_threshold_by_macro_f1` (`python/eval/metrics.py`)
+maximizes the *average* of per-pattern-type F1 instead of one pooled
+number, so a threshold that zeroes a minority group can't win — applied
+everywhere a threshold gets chosen (`train.py`, `case_study.py`,
+`multi_symbol.py`), not just where the bug was caught. Re-running the same
+pooled 5-symbol evaluation: spoofing recall 0.0 → **0.71**, layering 0.67
+→ **0.84**, overall recall 0.58 → **0.82**, at a precision cost of 0.96 →
+0.77 (FPR still ~0.05%). The single-symbol path is unaffected — re-running
+both AAPL datasets through `train.py` after the change reproduced
+byte-identical numbers, since a single symbol never hit the degenerate
+all-1.0-threshold case that pooling did.
+
 ## License
 
 MIT

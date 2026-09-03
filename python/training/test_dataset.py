@@ -1,6 +1,7 @@
 import pandas as pd
 
 from python.training.dataset import (
+    attach_group_columns,
     build_training_table,
     time_based_split,
     time_based_split_train_val_test,
@@ -71,6 +72,18 @@ def test_build_training_table_handles_multi_order_layering_labels(tmp_path):
     table = build_training_table(features_csv, ground_truth_csv)
     labels = dict(zip(table["order_id"], table["label"]))
     assert labels == {1: 1, 2: 1, 500: 0}
+
+
+def test_attach_group_columns_only_labels_manipulative_orders():
+    table = pd.DataFrame({"order_id": [1, 2, 3], "label": [1, 1, 0]})
+    ground_truth = pd.DataFrame([
+        {"order_ids": "1;2", "difficulty_tier": "hard", "pattern_type": "layering"},
+    ])
+    result = attach_group_columns(table, ground_truth)
+    assert result["difficulty_tier"].tolist()[:2] == ["hard", "hard"]
+    assert pd.isna(result["difficulty_tier"].iloc[2])
+    assert result["pattern_type"].tolist()[:2] == ["layering", "layering"]
+    assert pd.isna(result["pattern_type"].iloc[2])
 
 
 def test_time_based_split_is_chronological_not_random():

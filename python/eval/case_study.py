@@ -41,18 +41,20 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from python.eval.metrics import select_threshold_by_f1
+from python.eval.metrics import select_threshold_by_macro_f1
 from python.injection import participants as participants_mod
 from python.injection import patterns as patterns_mod
 from python.injection.injector import (
     AUGMENTED_COLUMNS,
     GROUND_TRUTH_COLUMNS,
     infer_tick_size,
+    load_ground_truth,
     load_messages,
     load_orderbook,
 )
 from python.training.dataset import (
     FEATURE_COLUMNS,
+    attach_group_columns,
     build_training_table,
     time_based_split_train_val_test,
 )
@@ -204,13 +206,15 @@ def main() -> None:
     # whether a model trained the normal way generalizes to a differently
     # -shaped real-world pattern, not whether a model can be tuned to
     # this specific burst.
+    training_ground_truth = load_ground_truth(args.training_ground_truth_csv)
     training_table = build_training_table(args.training_features_csv, args.training_ground_truth_csv)
+    training_table = attach_group_columns(training_table, training_ground_truth)
     train, val, _test = time_based_split_train_val_test(
         training_table, val_frac=args.val_frac, test_frac=args.test_frac
     )
     model = fit_model(train, seed=args.seed)
     val_proba = model.predict_proba(val[FEATURE_COLUMNS])[:, 1]
-    threshold, _ = select_threshold_by_f1(val["label"].to_numpy(), val_proba)
+    threshold, _ = select_threshold_by_macro_f1(val["label"].to_numpy(), val_proba, val["pattern_type"])
     print(f"Scoring with operating threshold {threshold:.4f} (selected on the regular run's val split)")
 
     case_study_table = build_training_table(case_study_features_csv, args.output_dir / "ground_truth.csv")

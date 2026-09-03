@@ -52,6 +52,26 @@ def build_training_table(features_csv: Path, ground_truth_csv: Path) -> pd.DataF
     return at_submission.sort_values("time").reset_index(drop=True)
 
 
+def attach_group_columns(table: pd.DataFrame, ground_truth: pd.DataFrame) -> pd.DataFrame:
+    """Adds `difficulty_tier`/`pattern_type` columns to a labeled table
+    (NaN on background rows), so threshold selection and reporting can
+    group by them directly instead of joining order_id -> group after the
+    fact — which matters once tables from more than one file get pooled
+    together (see python/eval/multi_symbol.py), since order_id is only
+    unique within a single LOBSTER file, not across files.
+    """
+    tier_by_order: dict[int, str] = {}
+    type_by_order: dict[int, str] = {}
+    for _, row in ground_truth.iterrows():
+        for oid in row["order_ids"].split(";"):
+            tier_by_order[int(oid)] = row["difficulty_tier"]
+            type_by_order[int(oid)] = row["pattern_type"]
+    table = table.copy()
+    table["difficulty_tier"] = table["order_id"].map(tier_by_order)
+    table["pattern_type"] = table["order_id"].map(type_by_order)
+    return table
+
+
 def time_based_split(table: pd.DataFrame, test_frac: float = 0.2) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Splits by time, not randomly — train on the earlier part of the day,
     evaluate on the later part, matching how the model would actually be
